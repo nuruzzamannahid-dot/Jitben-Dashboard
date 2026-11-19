@@ -22,8 +22,15 @@
   // Non-secret config. The (public, RLS-protected) anon key is safe here;
   // put it in place with: npx wrangler secret put SUPABASE_ANON_KEY
   "vars": {
+    // Supabase is optional: /config.js forwards these to the browser when set.
     "SUPABASE_URL": "",
-    "SUPABASE_ANON_KEY": ""
+    "SUPABASE_ANON_KEY": "",
+
+    // Live data source: "Jitben data dump" (fid, status, timestamps).
+    // Must be shared as "Anyone with the link → Viewer" for the CSV to be public.
+    "SHEET_ID": "1vIwR22w8QfYLpt9QlC4fpbQweJGgg0MdhPXv9oMB32M",
+    "SHEET_NAME": "Sheet1",
+    "SHEET_TTL_SECONDS": "120"
   },
 
   "observability": { "enabled": true }

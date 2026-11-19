@@ -235,7 +235,7 @@
       <div class="mark" aria-hidden="true">JB</div>
       <div>
         <h1>Jitben · Ops Dashboard</h1>
-        <div class="sub">10/10/2026 – 17/11/2026 · 1,098 processed orders</div>
+        <div class="sub" id="sub">loading…</div>
       </div>
     </div>
     <div class="live" id="live">
@@ -405,7 +405,7 @@ async function load() {
       const r = await fetch('api/orders', { headers: { accept: 'application/json' } });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       rows = await r.json();
-      source = 'bundled';
+      source = r.headers.get('x-data-source') === 'sheet' ? 'live' : 'bundled';
     } catch (e) {
       offline('no data source');
       return;
@@ -421,6 +421,7 @@ async function load() {
 
     $('#dot').classList.remove('bad');
     $('#livetxt').textContent = ORDERS.length.toLocaleString() + ' orders · ' + source;
+    renderSubtitle();
     renderKpis(); renderStatus();
     requestAnimationFrame(drawTrend);
     renderDod(); fillFilters(); applyFilters();
@@ -437,6 +438,15 @@ function fmtDate(iso) {
   return d + '/' + m + '/' + y;
 }
 const dkey = (s) => { const [d,m,y] = s.split('/'); return y + m + d; };
+
+/* ---------------- header subtitle ---------------- */
+function renderSubtitle() {
+  const dates = ORDERS.map(o => o.date).filter(Boolean).sort((a, b) => dkey(a) < dkey(b) ? -1 : 1);
+  const sub = $('#sub');
+  if (!sub) return;
+  sub.textContent = (dates.length ? dates[0] + ' – ' + dates[dates.length - 1] : 'no dates')
+    + ' · ' + ORDERS.length.toLocaleString() + ' orders';
+}
 
 /* ---------------- KPI ---------------- */
 function renderKpis() {
