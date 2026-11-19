@@ -23,7 +23,16 @@ hive tab ──content-hive.js──▶ service worker ──▶ dashboard tab
    `Receiver info` > 0 once the Hive page has rendered orders.
 
 The dashboard header switches to `N orders · hive live` with a green pill the
-moment the first snapshot lands.
+moment the first snapshot lands. The parenthetical tells you what changed:
+
+| Header | Meaning |
+|---|---|
+| `1,153 orders · hive live (+9)` | 9 orders were seen for the first time |
+| `1,153 orders · hive live (4 updated)` | 4 existing orders changed (status / receiver info) |
+| `1,153 orders · hive live (+9, 4 updated)` | both |
+
+Rows that changed flash green for ~2.5s, so a status moving from
+`Assigned For Delivery` → `Delivered` is visible without hunting for it.
 
 ## What it reads
 
