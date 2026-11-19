@@ -47,6 +47,7 @@ async function handleSnapshot(msg) {
 
   state.updatedAt = Date.now();
   state.scrapes = (state.scrapes || 0) + 1;
+  if (msg.meta) state.meta = { ...(state.meta || {}), ...msg.meta, at: Date.now() };
   await writeState(state);
 
   broadcast(Object.values(state.byFid));

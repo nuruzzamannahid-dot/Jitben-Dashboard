@@ -98,7 +98,11 @@ check("no duplicate filter options", window.document.getElementById("fStatus").o
 window.postMessage({ type: "jitben:live", rows: snapshot, ext: true }, "*");
 await sleep(300);
 check("repeat snapshot does not duplicate rows", rows().length, 6);
-check("repeat snapshot keeps the header stable", pillText(), "6 orders · hive live");
+check(
+  "repeat snapshot does not wipe the change counts",
+  pillText(),
+  "6 orders · hive live (+1, 1 updated)",
+);
 
 // status-only change on an existing order
 window.postMessage(

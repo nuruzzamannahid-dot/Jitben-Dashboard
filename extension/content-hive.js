@@ -37,6 +37,25 @@
 
   const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
 
+  const CITY_STOP = /^(bangladesh|bangla ?desh|bd)$/i;
+
+  /** "Khanhat, Gachbaria, Chandanaish" → "Chandanaish" (best-effort, never guessed from digits). */
+  function cityFromAddress(address) {
+    const parts = String(address || "")
+      .split(",")
+      .map(clean)
+      .filter(Boolean);
+    if (parts.length < 2) return "";
+    let last = parts[parts.length - 1];
+    if (CITY_STOP.test(last)) {
+      // "Bhola, Bangladesh" → Bhola ; "X, Y, Bangladesh" → Y
+      if (parts.length < 2) return "";
+      last = parts[parts.length - 2];
+    }
+    if (last.length > 26 || /\d/.test(last)) return "";
+    return last;
+  }
+
   function toIsoDate(value) {
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(clean(value));
     if (m) return `${m[1]}-${m[2]}-${m[3]}`;
@@ -180,9 +199,9 @@
       fid,
       status,
       receiver_name: name,
-      phone: findPhone(text),
-      address: findAddress(text),
-      city: "",
+      phone,
+      address,
+      city: cityFromAddress(address),
       order_date: findDate(text),
       source: "hive",
     };
@@ -255,13 +274,15 @@
     const phoneRaw = deepPick(obj, PHONE_KEY);
     const phone = phoneRaw ? findPhone(phoneRaw) || "" : "";
 
+    const address = deepPick(obj, ADDR_KEY);
+
     return {
       fid,
       status: status || "Unknown",
       receiver_name: deepPick(obj, NAME_KEY),
       phone,
-      address: deepPick(obj, ADDR_KEY),
-      city: "",
+      address,
+      city: cityFromAddress(address),
       order_date: toIsoDate(deepPick(obj, DATE_KEY)),
       via: "api",
     };
@@ -391,6 +412,8 @@
   let lastSignature = "";
   let paused = false;
   const apiRows = new Map(); // fid -> row mined from the page's JSON
+  let hookAt = 0; // when the MAIN-world hook last said hello
+  let payloads = 0; // JSON payloads received from it
 
   function currentRows() {
     const byFid = new Map(apiRows);
@@ -413,24 +436,52 @@
     lastSignature = signature;
 
     try {
-      chrome.runtime.sendMessage({ type: "jitben:snapshot", rows, url: location.href, at: Date.now() });
+      chrome.runtime.sendMessage({
+        type: "jitben:snapshot",
+        rows,
+        url: location.href,
+        at: Date.now(),
+        meta: {
+          hook: hookAt ? "on" : "off",
+          hookAt,
+          payloads,
+          api: apiRows.size,
+          dom: rows.length - apiRows.size,
+        },
+      });
     } catch (e) {
       // extension context can be reloaded out from under us
       console.debug("[jitben] send failed", e);
     }
   }
 
-  // Ask the background worker to install the MAIN-world fetch/XHR hook.
-  try {
-    chrome.runtime.sendMessage({ type: "jitben:inject-main" });
-  } catch {
-    /* extension reloaded */
-  }
+  // Ask the background worker to install the MAIN-world fetch/XHR hook, and ask
+  // again if it never reports back (e.g. the page was restored from bfcache).
+  const askForHook = () => {
+    try {
+      chrome.runtime.sendMessage({ type: "jitben:inject-main" });
+    } catch {
+      /* extension reloaded */
+    }
+  };
+  askForHook();
+  setTimeout(() => {
+    if (!hookAt) askForHook();
+  }, 3000);
+  setInterval(() => {
+    if (!hookAt) askForHook();
+  }, 30000);
 
   window.addEventListener("message", (e) => {
     if (e.source && e.source !== window) return;
     const d = e.data;
-    if (!d || d.__jitben !== "json") return;
+    if (!d) return;
+    if (d.__jitben === "hello") {
+      hookAt = Date.now();
+      return;
+    }
+    if (d.__jitben !== "json") return;
+    payloads++;
 
     let rows = [];
     try {
@@ -458,7 +509,19 @@
     if (msg?.type === "jitben:scrape-now") {
       lastSignature = "";
       const rows = scrape();
-      chrome.runtime.sendMessage({ type: "jitben:snapshot", rows, url: location.href, at: Date.now() });
+      chrome.runtime.sendMessage({
+        type: "jitben:snapshot",
+        rows,
+        url: location.href,
+        at: Date.now(),
+        meta: {
+          hook: hookAt ? "on" : "off",
+          hookAt,
+          payloads,
+          api: apiRows.size,
+          dom: rows.length - apiRows.size,
+        },
+      });
     }
   });
 

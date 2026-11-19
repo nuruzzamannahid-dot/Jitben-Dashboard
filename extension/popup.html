@@ -31,13 +31,15 @@
 </head>
 <body>
   <h1>Jitben live bridge</h1>
-  <div class="sub">Hive → Dashboard, every second</div>
+  <div class="sub" id="sub">Hive → Dashboard, every second</div>
 
   <div class="row"><span class="k">Status</span><span class="v"><span class="dot" id="dot"></span><span id="state">idle</span></span></div>
   <div class="row"><span class="k">Orders captured</span><span class="v" id="count">0</span></div>
   <div class="row"><span class="k">Receiver info</span><span class="v" id="details">0</span></div>
   <div class="row"><span class="k">Last update</span><span class="v" id="last">—</span></div>
   <div class="row"><span class="k">Scrapes</span><span class="v" id="scrapes">0</span></div>
+  <div class="row"><span class="k">Payload hook</span><span class="v" id="hook">—</span></div>
+  <div class="row"><span class="k">API rows</span><span class="v" id="api">0</span></div>
 
   <label class="k" for="dashboardUrl" style="display:block;margin-top:12px;font-size:11.5px">Dashboard URL</label>
   <input id="dashboardUrl" type="url" spellcheck="false"

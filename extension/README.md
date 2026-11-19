@@ -9,7 +9,8 @@ hive tab
  ├─ injected.js  (page world: watches the site's own fetch/XHR → JSON)
  └─ content-hive.js (content world: mines that JSON + scrapes the DOM)
                  └──▶ service worker ──▶ dashboard tab
-                        (merge by fid)     (content-dashboard.js
+                        (merge by fid)     (content-dashboard.js:
+                                            push + 1.5 s poll
                                             → window.postMessage
                                             → applyLiveRows())
 ```
@@ -23,6 +24,14 @@ Two sources, one row shape:
    gives you statuses for orders that are on screen.
 
 API data wins over DOM data for the same `fid`; the DOM fills the gaps.
+`city` is derived from the tail of the address (`…, Chandanaish` → `Chandanaish`,
+a trailing `Bangladesh` is dropped) when the payload does not carry one.
+
+The dashboard tab is fed **two ways**: the instant push from the service worker
+*and* a 1.5 s poll of `jitben:get`. The poll is what guarantees convergence — if
+the extension is reloaded while the dashboard tab is open, or a broadcast lands
+while the page is still booting, the page used to keep a stale snapshot forever
+(statuses present, receiver columns stuck on `—`). It now catches up on its own.
 
 ## Install (2 minutes, unpacked)
 
@@ -95,8 +104,11 @@ already have open.
 | Symptom | Fix |
 |---|---|
 | popup says `waiting for Hive tab` | open `hive.carrybee.com/orders` and wait for rows to render |
+| popup `Payload hook: off` | the page-world hook never reported in — reload the Hive tab (it installs at `document_start`) and check the extension is version 1.2.0+ |
+| popup `Payload hook: on`, `API rows: 0` | the page has not loaded an order payload yet — scroll or paginate the list once |
 | rows counted, `Receiver info` 0 | the list view shows only id + status; reload the Hive tab so `injected.js` is installed, then scroll/paginate once so the site loads its order payloads |
-| dashboard shows `—` under RECEIVER | that order's receiver was never in a payload the page loaded (old rows) — open the order once, or scroll its page, and the cells fill in |
+| dashboard shows `—` under RECEIVER while the popup shows receiver info | stale page state: reload the dashboard tab once (1.2.0+ also self-heals within 1.5 s via polling) |
+| dashboard shows `—` and popup `API rows: 0` | receiver details were never in a payload this session — scroll/paginate the Hive list once |
 | dashboard shows `bundled`/`live` (sheet) instead | the extension has not sent anything yet, or the dashboard URL changed — set it in the popup |
 | nothing after editing `content-hive.js` | `chrome://extensions` → reload the extension, then reload both tabs |
 
@@ -104,12 +116,16 @@ already have open.
 
 ```bash
 npm install
-npm test                 # scraper + JSON miner + dashboard bridge
+npm test                 # scraper + JSON miner, live bridge, dashboard
 ```
 
-Tests live in `extension/test/scraper.test.mjs` (table / card / blob / JSON /
-end-to-end payload → snapshot) and `test/dashboard.test.mjs`; both run in CI
-before every deploy.
+- `extension/test/scraper.test.mjs` — table / card / blob / JSON payloads, plus
+  an end-to-end payload → snapshot check.
+- `test/bridge.test.mjs` — reproduces the “popup says 20/20, page shows —”
+  failure with **no** broadcast at all and proves the page self-heals by polling.
+- `test/dashboard.test.mjs` — merge, header counters, `.fresh` flash, data note.
+
+All three run in CI before every deploy.
 
 After editing any extension file: `chrome://extensions` → **Reload**, then
 reload the Hive tab (the page-world hook is installed at `document_start`) and

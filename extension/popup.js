@@ -17,6 +17,11 @@ async function render() {
   $("last").textContent = fmt(state?.updatedAt);
   $("scrapes").textContent = String(state?.scrapes || 0);
 
+  const meta = state?.meta || {};
+  $("hook").textContent = meta.hook === "on" ? "on" : meta.hook === "off" ? "off" : "—";
+  $("api").textContent = String(meta.api || 0);
+  $("sub").textContent = "v" + (chrome.runtime.getManifest?.().version || "?") + " · Hive → Dashboard, every second";
+
   const dot = $("dot");
   dot.className = "dot " + (paused ? "off" : rows.length ? "on" : "");
 
@@ -30,9 +35,12 @@ async function render() {
   if (!rows.length) {
     $("hint").innerHTML =
       'Open <code>hive.carrybee.com/orders</code> in a tab — rows are captured on their own, then streamed here and to the dashboard.';
+  } else if (rows.length && meta.hook !== "on") {
+    $("hint").innerHTML =
+      "Statuses are flowing, but the payload hook is off, so receiver details cannot be read. Reload the Hive tab once (the hook installs at page start).";
   } else if (!withDetails) {
     $("hint").innerHTML =
-      "Statuses are flowing, but no receiver details were found. Open an order's detail panel once — the scraper will pick up name / address from there.";
+      "Statuses are flowing, but no receiver details were found yet. Scroll or paginate the Hive list once so the page loads its order payloads.";
   } else {
     $("hint").innerHTML =
       'Streaming to the dashboard. Keep this tab (or the Hive tab) open; clearing data only resets the extension cache.';
