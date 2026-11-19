@@ -58,6 +58,9 @@ jobs:
             exit 0
           fi
 
+          # Shape only — never the value. Distinguishes paste errors from account issues.
+          echo "::notice::credential shape: prefix='${cred:0:4}' length=$(printf '%s' "$cred" | wc -c) (cfut_/cfat_ scoped token, cfk_ global key); account id length=$(printf '%s' "$acct" | wc -c)"
+
           case "$cred" in
             cfk_*)
               # Global API Key → needs the account email for X-Auth-Key auth.
@@ -121,7 +124,11 @@ jobs:
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
           if [ "$status" -ne 0 ]; then
-            msg=$(sed -e 's/\x1b\[[0-9;]*m//g' deploy.log \
+            plain=$(sed -e 's/\x1b\[[0-9;]*m//g' deploy.log)
+            if printf '%s' "$plain" | grep -qi 'workers.dev subdomain'; then
+              echo "::error::Account $ACCOUNT_ID has no workers.dev subdomain registered. Either register one (Dash → Workers & Pages → your account → 'Subdomain'), or add a route/custom domain to wrangler.jsonc and set \"workers_dev\": false."
+            fi
+            msg=$(printf '%s' "$plain" \
               | grep -iE 'error|invalid|unauthor|forbidden|denied|not found|code:' \
               | tail -n 4 | tr '\n' ' ' | cut -c1-800)
             echo "::error::wrangler deploy failed (exit $status): ${msg:-see the deploy log}"
