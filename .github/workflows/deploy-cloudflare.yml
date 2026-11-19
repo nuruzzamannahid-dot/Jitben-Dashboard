@@ -116,10 +116,12 @@ jobs:
           sub=$(printf '%s' "$body" | sed -n 's/.*"subdomain":"\([^"]*\)".*/\1/p')
           if [ "$code" = "200" ] && [ -n "$sub" ]; then
             echo "::notice::workers.dev subdomain: $sub.workers.dev"
-          elif [ "$code" = "200" ]; then
-            echo "::error::This account has no workers.dev subdomain yet. Register one at https://dash.cloudflare.com/$ACCOUNT_ID/workers/onboarding (or add a route to wrangler.jsonc and set \"workers_dev\": false)."
+          elif printf '%s' "$body" | grep -q '"code":\s*10007\|10007'; then
+            echo "::error::Account $ACCOUNT_ID has no workers.dev subdomain yet. Open https://dash.cloudflare.com/?to=/:account/workers/workers-and-pages once (it is created automatically), or set \"workers_dev\": false in wrangler.jsonc and deploy to a route/custom domain."
+          elif [ "$code" = "403" ]; then
+            echo "::error::Token cannot read the account's Workers settings (HTTP 403) — add the Account Settings: Read and Workers Scripts: Edit permissions."
           else
-            echo "::error::Cannot read the account's workers.dev subdomain (HTTP $code): $(printf '%s' "$body" | tr -d '\n' | cut -c1-400) — the token likely lacks Account Settings: Read / Workers Scripts: Edit."
+            echo "::error::Subdomain check failed (HTTP $code): $(printf '%s' "$body" | tr -d '\n' | cut -c1-400)"
           fi
 
       - name: Deploy
