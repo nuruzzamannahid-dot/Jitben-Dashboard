@@ -1,0 +1,30 @@
+/**
+ * Cloudflare Workers configuration — Jitben Ops Dashboard.
+ * Deploy with: npx wrangler deploy
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "jitben-dashboard",
+  "main": "src/index.js",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": true,
+
+  // Static dashboard (index.html, assets) — served from the edge, ahead of the Worker.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none"
+  },
+
+  // Non-secret config. The (public, RLS-protected) anon key is safe here;
+  // put it in place with: npx wrangler secret put SUPABASE_ANON_KEY
+  "vars": {
+    "SUPABASE_URL": "",
+    "SUPABASE_ANON_KEY": ""
+  },
+
+  "observability": { "enabled": true }
+}

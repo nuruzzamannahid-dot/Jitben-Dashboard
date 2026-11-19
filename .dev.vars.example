@@ -1,0 +1,6 @@
+# Local-only Worker secrets for `wrangler dev` (never commit — see .gitignore).
+# Copy to `.dev.vars` and fill in, or set the real values with:
+#   npx wrangler secret put SUPABASE_URL
+#   npx wrangler secret put SUPABASE_ANON_KEY
+SUPABASE_URL="https://YOUR-PROJECT.supabase.co"
+SUPABASE_ANON_KEY="YOUR-ANON-PUBLIC-KEY"
