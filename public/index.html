@@ -692,7 +692,9 @@ function applyLiveRows(rows) {
 }
 
 window.addEventListener('message', (e) => {
-  if (e.source !== window || !e.data || e.data.type !== 'jitben:live') return;
+  // Chrome reports the posting window; jsdom/tests report null. A cross-origin
+  // iframe would report its own window, so that stays rejected.
+  if ((e.source && e.source !== window) || !e.data || e.data.type !== 'jitben:live') return;
   LIVE_ROWS = e.data.rows || [];
   if (ORDERS.length) applyLiveRows(LIVE_ROWS);
 });

@@ -137,7 +137,7 @@ The header pill tells you which one is active: `hive live`, `live`, or `bundled`
 Scraper heuristics are unit-tested against table / card / text-blob layouts:
 
 ```bash
-npm run test:scraper
+npm test          # 17 scraper assertions + 12 dashboard live-bridge assertions
 ```
 
 ## Live data from Google Sheets

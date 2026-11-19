@@ -35,9 +35,9 @@ jobs:
 
       - run: npm ci
 
-      # Guards the extension's DOM heuristics against regressions.
-      - name: Test scraper heuristics
-        run: npm run test:scraper
+      # Guards the extension's DOM heuristics and the dashboard live merge.
+      - name: Test scraper + live bridge
+        run: npm test
 
       # Fails the build if the Worker entry/assets no longer bundle.
       - name: Typecheck Worker bundle (dry run)
