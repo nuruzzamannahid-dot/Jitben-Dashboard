@@ -149,12 +149,12 @@ jobs:
             fi
             # 10036 = "Account already has an associated subdomain" — read it back.
             if printf '%s' "$out" | grep -q '10036'; then
+              # Already associated. The name is not always readable through this
+              # endpoint, so trust wrangler's deploy output for the real URL.
               sub=$(read_sub)
-              if [ -n "$sub" ]; then
-                echo "::notice::workers.dev subdomain already registered: $sub.workers.dev"
-                echo "subdomain=$sub" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
+              echo "subdomain=$sub" >> "$GITHUB_OUTPUT"
+              echo "::notice::Account already has a workers.dev subdomain${sub:+: $sub.workers.dev} — leaving it as is."
+              exit 0
             fi
             candidate="$candidate$((attempt + 1))"
           done
