@@ -27,6 +27,15 @@ API data wins over DOM data for the same `fid`; the DOM fills the gaps.
 `city` is derived from the tail of the address (`…, Chandanaish` → `Chandanaish`,
 a trailing `Bangladesh` is dropped) when the payload does not carry one.
 
+**Reloading the extension repairs open tabs.** Chrome does not re-inject content
+scripts into tabs that are already on screen — they keep running the old file for
+the rest of their life, which is why a freshly updated extension can still report
+`Payload hook: —` while the Hive tab streams half the data. On install/update,
+when the popup opens, and once per service-worker start (throttled), the worker
+re-runs the current `content-hive.js` / `content-dashboard.js` in every matching
+tab. Both scripts carry a version guard, so the re-run is a no-op in tabs that
+are already current.
+
 The dashboard tab is fed **two ways**: the instant push from the service worker
 *and* a 1.5 s poll of `jitben:get`. The poll is what guarantees convergence — if
 the extension is reloaded while the dashboard tab is open, or a broadcast lands
@@ -104,7 +113,8 @@ already have open.
 | Symptom | Fix |
 |---|---|
 | popup says `waiting for Hive tab` | open `hive.carrybee.com/orders` and wait for rows to render |
-| popup `Payload hook: off` | the page-world hook never reported in — reload the Hive tab (it installs at `document_start`) and check the extension is version 1.2.0+ |
+| popup `Payload hook: —` | no snapshot with hook state has arrived yet: keep the popup open for ~2 s (opening it re-injects the scripts). If it stays `—`, reload the Hive tab once |
+| popup `Payload hook: off` | the page-world hook never reported in — reload the Hive tab (it installs at `document_start`) and check the extension is version 1.3.0+ |
 | popup `Payload hook: on`, `API rows: 0` | the page has not loaded an order payload yet — scroll or paginate the list once |
 | rows counted, `Receiver info` 0 | the list view shows only id + status; reload the Hive tab so `injected.js` is installed, then scroll/paginate once so the site loads its order payloads |
 | dashboard shows `—` under RECEIVER while the popup shows receiver info | stale page state: reload the dashboard tab once (1.2.0+ also self-heals within 1.5 s via polling) |
@@ -123,9 +133,12 @@ npm test                 # scraper + JSON miner, live bridge, dashboard
   an end-to-end payload → snapshot check.
 - `test/bridge.test.mjs` — reproduces the “popup says 20/20, page shows —”
   failure with **no** broadcast at all and proves the page self-heals by polling.
+- `test/background.test.mjs` — service worker: `jitben:get` returns `meta`, a
+  meta-less snapshot cannot erase details, and install/update re-injects into
+  the Hive tab (+ MAIN-world hook) and the dashboard tab only.
 - `test/dashboard.test.mjs` — merge, header counters, `.fresh` flash, data note.
 
-All three run in CI before every deploy.
+All four run in CI before every deploy.
 
 After editing any extension file: `chrome://extensions` → **Reload**, then
 reload the Hive tab (the page-world hook is installed at `document_start`) and

@@ -12,6 +12,10 @@
 (() => {
   "use strict";
 
+  // Second injection (extension update with the tab already open) is a no-op.
+  if ((window.__jitbenDashV || 0) >= 2) return;
+  window.__jitbenDashV = 2;
+
   let lastPush = "";
 
   function push(rows, updatedAt) {
