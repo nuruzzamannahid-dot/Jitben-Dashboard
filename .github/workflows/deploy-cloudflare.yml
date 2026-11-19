@@ -122,6 +122,48 @@ jobs:
             echo "::error::Cannot read the account's workers.dev subdomain (HTTP $code): $(printf '%s' "$body" | tr -d '\n' | cut -c1-400) — the token likely lacks Account Settings: Read / Workers Scripts: Edit."
           fi
 
+      # Cloudflare returns 10007 until the account has a workers.dev subdomain.
+      # Register one here so the deploy is self-healing. Override the name with
+      # a repository variable WORKERS_SUBDOMAIN (Settings → Variables → Actions).
+      - name: Ensure workers.dev subdomain
+        if: steps.creds.outputs.mode != 'none'
+        env:
+          ACCOUNT_ID: ${{ steps.creds.outputs.account }}
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
+          MODE: ${{ steps.creds.outputs.mode }}
+          PREFERRED: ${{ vars.WORKERS_SUBDOMAIN }}
+        run: |
+          set +e
+          base=https://api.cloudflare.com/client/v4
+          if [ "$MODE" = "key" ]; then
+            auth=(-H "X-Auth-Key: $TOKEN" -H "X-Auth-Email: $EMAIL")
+          else
+            auth=(-H "Authorization: Bearer $TOKEN")
+          fi
+
+          resp=$(curl -sS --max-time 20 -w '\n%{http_code}' "${auth[@]}" "$base/accounts/$ACCOUNT_ID/workers/subdomain")
+          code=$(printf '%s' "$resp" | tail -n 1)
+          body=$(printf '%s' "$resp" | sed '$d')
+          if [ "$code" = "200" ] && printf '%s' "$body" | grep -q '"subdomain"'; then
+            echo "::notice::workers.dev subdomain already registered."
+            exit 0
+          fi
+
+          candidate="${PREFERRED:-jitben-$(printf '%s' "$ACCOUNT_ID" | cut -c1-6)}"
+          candidate=$(printf '%s' "$candidate" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')
+          for attempt in 1 2 3; do
+            out=$(curl -sS --max-time 20 -X PUT "${auth[@]}" -H 'content-type: application/json' \
+              --data "{\"subdomain\":\"$candidate\"}" "$base/accounts/$ACCOUNT_ID/workers/subdomain")
+            echo "PUT $candidate -> $out"
+            if printf '%s' "$out" | grep -q '"success":true'; then
+              echo "::notice::Registered workers.dev subdomain: $candidate.workers.dev"
+              exit 0
+            fi
+            candidate="$candidate$((attempt + 1))"
+          done
+          echo "::error::Could not register a workers.dev subdomain: $(printf '%s' "$out" | tr -d '\n' | cut -c1-500)"
+
       - name: Deploy
         id: deploy
         if: steps.creds.outputs.mode != 'none'
