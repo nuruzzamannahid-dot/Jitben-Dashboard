@@ -44,24 +44,57 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # Surfaces token/account problems as annotations we can read without logs.
+      - name: Verify Cloudflare credentials
+        if: steps.creds.outputs.ready == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set +e
+          body=$(curl -sS --max-time 20 -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            https://api.cloudflare.com/client/v4/user/tokens/verify)
+          echo "token verify response: $body"
+          ok=$(printf '%s' "$body" | grep -c '"success":true')
+          if [ "$ok" -eq 0 ]; then
+            echo "::error::Token verify failed: $(printf '%s' "$body" | tr -d '\n' | cut -c1-600)"
+          else
+            echo "::notice::Token is active: $(printf '%s' "$body" | tr -d '\n' | cut -c1-200)"
+          fi
+
+          acct=$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts")
+          echo "account scripts HTTP $acct"
+          if [ "$acct" != "200" ]; then
+            echo "::error::Account $CLOUDFLARE_ACCOUNT_ID is not accessible with this token (HTTP $acct) — check the account ID and the token's Workers Scripts: Edit permission."
+          fi
+
       - name: Deploy
         id: deploy
         if: steps.creds.outputs.ready == 'true'
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set +e
+          npx wrangler deploy 2>&1 | tee deploy.log
+          status=${PIPESTATUS[0]}
+          url=$(grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' deploy.log | tail -n 1)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          if [ "$status" -ne 0 ]; then
+            msg=$(sed -e 's/\x1b\[[0-9;]*m//g' deploy.log \
+              | grep -iE 'error|invalid|unauthor|forbidden|denied|not found|code:' \
+              | tail -n 4 | tr '\n' ' ' | cut -c1-800)
+            echo "::error::wrangler deploy failed (exit $status): ${msg:-see deploy.log}"
+            exit "$status"
+          fi
 
       - name: Smoke test /api/health
-        if: steps.creds.outputs.ready == 'true'
+        if: steps.creds.outputs.ready == 'true' && steps.deploy.outputs.url != ''
         env:
-          URL: ${{ steps.deploy.outputs.deployment-url }}
+          URL: ${{ steps.deploy.outputs.url }}
         run: |
-          if [ -z "$URL" ]; then
-            echo "::warning::No deployment URL reported by wrangler-action; skipping smoke test."
-            exit 0
-          fi
           echo "Deployment: $URL"
           for i in 1 2 3 4 5; do
             if curl -fsS --max-time 20 "$URL/api/health"; then
