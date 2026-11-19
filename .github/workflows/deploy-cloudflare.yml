@@ -12,6 +12,15 @@ concurrency:
 permissions:
   contents: read
 
+# Credential options (GitHub → Settings → Secrets and variables → Actions):
+#
+#   CLOUDFLARE_API_TOKEN   scoped token (cfut_/cfat_/legacy 40-char)  ← preferred
+#   CLOUDFLARE_ACCOUNT_ID  account ID (required in every case)
+#   CLOUDFLARE_EMAIL       only for the global API key path (cfk_)
+#
+# A cfk_-prefixed value is a *Global API Key*, not a token: it authenticates
+# with X-Auth-Key + X-Auth-Email and is rejected by the Bearer-token path.
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -30,68 +39,97 @@ jobs:
       - name: Typecheck Worker bundle (dry run)
         run: npx wrangler deploy --dry-run --outdir dist
 
-      # Without these secrets the run says so instead of dying inside wrangler.
       - name: Check deploy credentials
         id: creds
         env:
-          API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          API_KEY_OR_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
         run: |
-          if [ -z "$API_TOKEN" ] || [ -z "$ACCOUNT_ID" ]; then
+          cred=$(printf '%s' "${API_KEY_OR_TOKEN:-}" | tr -d '[:space:]')
+          email=$(printf '%s' "${EMAIL:-}" | tr -d '[:space:]')
+          acct=$(printf '%s' "${ACCOUNT_ID:-}" | tr -d '[:space:]')
+
+          echo "account=$acct" >> "$GITHUB_OUTPUT"
+
+          if [ -z "$cred" ] || [ -z "$acct" ]; then
             echo "::warning::CLOUDFLARE_API_TOKEN and/or CLOUDFLARE_ACCOUNT_ID are not set — skipping deploy."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "mode=none" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-      # Surfaces token/account problems as annotations we can read without logs.
+          case "$cred" in
+            cfk_*)
+              # Global API Key → needs the account email for X-Auth-Key auth.
+              if [ -n "$email" ]; then
+                echo "mode=key" >> "$GITHUB_OUTPUT"
+                echo "::notice::Using Cloudflare Global API Key + $email (consider a scoped cfut_ token instead)."
+              else
+                echo "::warning::CLOUDFLARE_API_TOKEN starts with cfk_, which is a Global API Key, not an API token. It cannot be used as a Bearer token (Cloudflare answers 'Invalid API Token'). Add CLOUDFLARE_EMAIL to use the key, or create a scoped API token (cfut_…) from the 'Edit Cloudflare Workers' template. Skipping deploy."
+                echo "mode=none" >> "$GITHUB_OUTPUT"
+              fi
+              ;;
+            cfut_*|cfat_*|*)
+              echo "mode=token" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
       - name: Verify Cloudflare credentials
-        if: steps.creds.outputs.ready == 'true'
+        if: steps.creds.outputs.mode != 'none'
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          MODE: ${{ steps.creds.outputs.mode }}
+          ACCOUNT_ID: ${{ steps.creds.outputs.account }}
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
         run: |
           set +e
-          body=$(curl -sS --max-time 20 -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            https://api.cloudflare.com/client/v4/user/tokens/verify)
-          echo "token verify response: $body"
-          ok=$(printf '%s' "$body" | grep -c '"success":true')
-          if [ "$ok" -eq 0 ]; then
-            echo "::error::Token verify failed: $(printf '%s' "$body" | tr -d '\n' | cut -c1-600)"
+          if [ "$MODE" = "key" ]; then
+            body=$(curl -sS --max-time 20 -H "X-Auth-Key: $TOKEN" -H "X-Auth-Email: $EMAIL" \
+              https://api.cloudflare.com/client/v4/user)
           else
-            echo "::notice::Token is active: $(printf '%s' "$body" | tr -d '\n' | cut -c1-200)"
+            body=$(curl -sS --max-time 20 -H "Authorization: Bearer $TOKEN" \
+              https://api.cloudflare.com/client/v4/user/tokens/verify)
           fi
-
-          acct=$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' \
-            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts")
-          echo "account scripts HTTP $acct"
-          if [ "$acct" != "200" ]; then
-            echo "::error::Account $CLOUDFLARE_ACCOUNT_ID is not accessible with this token (HTTP $acct) — check the account ID and the token's Workers Scripts: Edit permission."
+          echo "verify response: $body"
+          if printf '%s' "$body" | grep -q '"success":true'; then
+            echo "::notice::Cloudflare credentials accepted."
+          else
+            echo "::error::Cloudflare rejected the credentials: $(printf '%s' "$body" | tr -d '\n' | cut -c1-600)"
           fi
 
       - name: Deploy
         id: deploy
-        if: steps.creds.outputs.ready == 'true'
+        if: steps.creds.outputs.mode != 'none'
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          MODE: ${{ steps.creds.outputs.mode }}
+          ACCOUNT_ID: ${{ steps.creds.outputs.account }}
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
         run: |
           set +e
+          export CLOUDFLARE_ACCOUNT_ID="$ACCOUNT_ID"
+          if [ "$MODE" = "key" ]; then
+            export CLOUDFLARE_API_KEY="$TOKEN" CLOUDFLARE_EMAIL="$EMAIL"
+            unset CLOUDFLARE_API_TOKEN
+          else
+            export CLOUDFLARE_API_TOKEN="$TOKEN"
+          fi
+
           npx wrangler deploy 2>&1 | tee deploy.log
           status=${PIPESTATUS[0]}
-          url=$(grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' deploy.log | tail -n 1)
+          url=$(sed -e 's/\x1b\[[0-9;]*m//g' deploy.log | grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' | tail -n 1)
           echo "url=$url" >> "$GITHUB_OUTPUT"
+
           if [ "$status" -ne 0 ]; then
             msg=$(sed -e 's/\x1b\[[0-9;]*m//g' deploy.log \
               | grep -iE 'error|invalid|unauthor|forbidden|denied|not found|code:' \
               | tail -n 4 | tr '\n' ' ' | cut -c1-800)
-            echo "::error::wrangler deploy failed (exit $status): ${msg:-see deploy.log}"
+            echo "::error::wrangler deploy failed (exit $status): ${msg:-see the deploy log}"
             exit "$status"
           fi
 
       - name: Smoke test /api/health
-        if: steps.creds.outputs.ready == 'true' && steps.deploy.outputs.url != ''
+        if: steps.deploy.outputs.url != ''
         env:
           URL: ${{ steps.deploy.outputs.url }}
         run: |
