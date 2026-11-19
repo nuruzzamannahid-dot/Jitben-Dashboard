@@ -114,6 +114,32 @@ Optionally attach a custom domain in **Workers & Pages → jitben-dashboard → 
 Vercel hosting still works if you prefer it: `vercel.json` points at `public/`
 (no build command). Cloudflare is now the primary target.
 
+## Live data from Hive (browser extension)
+
+`extension/` is a Manifest V3 Chrome extension that reads
+**hive.carrybee.com/orders** every second and pushes status + receiver info
+straight into an open dashboard tab — no button, no export.
+
+```
+hive tab ──scrape 1×/s──▶ service worker ──merge by fid──▶ dashboard tab
+```
+
+Install: `chrome://extensions` → Developer mode → **Load unpacked** →
+select `extension/`. Full details in [`extension/README.md`](extension/README.md).
+
+Data precedence on the dashboard, strongest first:
+
+1. **Hive live** (extension, per second) — status *and* receiver name/phone/address
+2. **Google Sheet** (edge fetch, 120s cache) — status only
+3. **`data/orders.json`** bundle — last known snapshot
+
+The header pill tells you which one is active: `hive live`, `live`, or `bundled`.
+Scraper heuristics are unit-tested against table / card / text-blob layouts:
+
+```bash
+npm test          # 17 scraper assertions + 12 dashboard live-bridge assertions
+```
+
 ## Live data from Google Sheets
 
 The Worker merges the **“Jitben data dump”** sheet into the dataset on every

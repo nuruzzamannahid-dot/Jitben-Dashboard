@@ -108,6 +108,7 @@
   .dot{width:7px;height:7px;border-radius:99px;background:var(--green);flex:none;
     box-shadow:0 0 0 3px rgba(34,197,94,.18)}
   .dot.bad{background:var(--red);box-shadow:0 0 0 3px rgba(239,68,68,.18)}
+  .live.ext{border-color:rgba(34,197,94,.45);background:rgba(34,197,94,.10)}
   @media (prefers-reduced-motion:no-preference){
     .dot{animation:pulse 2.6s ease-in-out infinite}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
@@ -425,6 +426,7 @@ async function load() {
     renderKpis(); renderStatus();
     requestAnimationFrame(drawTrend);
     renderDod(); fillFilters(); applyFilters();
+    if (LIVE_ROWS && LIVE_ROWS.length) applyLiveRows(LIVE_ROWS);
   } catch (e) {
     $('#dot').classList.add('bad');
     $('#livetxt').textContent = 'error';
@@ -630,15 +632,86 @@ function renderDod() {
   tbody.appendChild(tr);
 }
 
+/* ---------------- live bridge (browser extension) ----------------
+   The extension scrapes hive.carrybee.com/orders every second and posts the
+   rows here; they are merged into whatever the sheet/bundle already provided.
+   Receiver details from Hive win, because they are the most recent. */
+let LIVE_ROWS = null;
+
+function applyLiveRows(rows) {
+  if (!Array.isArray(rows) || !rows.length) return;
+
+  const byFid = new Map(ORDERS.map(o => [o.fid, o]));
+  let added = 0, changed = 0;
+
+  for (const r of rows) {
+    if (!r || !r.fid) continue;
+    const cur = byFid.get(r.fid);
+    const date = r.order_date ? fmtDate(r.order_date) : (cur && cur.date) || '';
+
+    if (!cur) {
+      byFid.set(r.fid, {
+        fid: r.fid, date, status: r.status || 'Unknown',
+        name: r.receiver_name || '', phone: r.phone || '',
+        address: r.address || '', city: r.city || '', amount: null
+      });
+      added++;
+      continue;
+    }
+
+    const next = {
+      ...cur,
+      date: date || cur.date,
+      status: r.status || cur.status,
+      name: r.receiver_name || cur.name,
+      phone: r.phone || cur.phone,
+      address: r.address || cur.address,
+      city: r.city || cur.city
+    };
+    if (JSON.stringify(next) !== JSON.stringify(cur)) { byFid.set(r.fid, next); changed++; }
+  }
+
+  if (!added && !changed) {
+    $('#livetxt').textContent = ORDERS.length.toLocaleString() + ' orders · hive live';
+    $('#live').classList.add('ext');
+    return;
+  }
+
+  ORDERS = [...byFid.values()].sort((a, b) => {
+    const ka = dkey(a.date || '01/01/1970'), kb = dkey(b.date || '01/01/1970');
+    return ka === kb ? (a.fid < b.fid ? -1 : 1) : (ka < kb ? -1 : 1);
+  });
+
+  renderKpis(); renderStatus(); renderDod(); fillFilters(); applyFilters(); renderSubtitle();
+  requestAnimationFrame(drawTrend);
+
+  $('#dot').classList.remove('bad');
+  $('#live').classList.add('ext');
+  $('#livetxt').textContent = ORDERS.length.toLocaleString() + ' orders · hive live'
+    + (added ? ' (+' + added + ')' : '');
+}
+
+window.addEventListener('message', (e) => {
+  // Chrome reports the posting window; jsdom/tests report null. A cross-origin
+  // iframe would report its own window, so that stays rejected.
+  if ((e.source && e.source !== window) || !e.data || e.data.type !== 'jitben:live') return;
+  LIVE_ROWS = e.data.rows || [];
+  if (ORDERS.length) applyLiveRows(LIVE_ROWS);
+});
+
 /* ---------------- customer table ---------------- */
 function fillFilters() {
   const sSel = $('#fStatus'), dSel = $('#fDay');
+  const keepS = sSel.value, keepD = dSel.value;
+  sSel.length = 1; dSel.length = 1;
   [...new Set(ORDERS.map(o => o.status))].sort().forEach(s => {
     const o = el('option'); o.value = s; o.textContent = s; sSel.appendChild(o);
   });
   [...new Set(ORDERS.map(o => o.date))].sort((a, b) => dkey(b) < dkey(a) ? -1 : 1).forEach(d => {
     const o = el('option'); o.value = d; o.textContent = d; dSel.appendChild(o);
   });
+  if (keepS) sSel.value = keepS;
+  if (keepD) dSel.value = keepD;
 }
 
 function applyFilters() {

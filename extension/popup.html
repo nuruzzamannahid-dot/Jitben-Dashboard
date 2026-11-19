@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; width: 300px; padding: 14px;
+    font: 13px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #0b0f1a; color: #e8eefc;
+  }
+  h1 { font-size: 13px; margin: 0 0 2px; letter-spacing: .2px; }
+  .sub { color: #8fa0bd; font-size: 11.5px; margin-bottom: 12px; }
+  .row { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.07); }
+  .row:last-of-type { border-bottom: 0; }
+  .k { color: #8fa0bd; }
+  .v { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 99px; background: #64748b; margin-right: 5px; vertical-align: 1px; }
+  .dot.on { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.18); }
+  .dot.off { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.18); }
+  button {
+    width: 100%; margin-top: 10px; padding: 7px 10px; border-radius: 8px; cursor: pointer;
+    background: rgba(59,130,246,.16); border: 1px solid rgba(96,165,250,.4); color: #e8eefc;
+    font: 600 12.5px inherit;
+  }
+  button:hover { background: rgba(59,130,246,.28); }
+  button.ghost { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.16); }
+  .hint { margin-top: 10px; font-size: 11px; color: #8fa0bd; line-height: 1.45; }
+  code { background: rgba(255,255,255,.07); padding: 0 4px; border-radius: 4px; }
+</style>
+</head>
+<body>
+  <h1>Jitben live bridge</h1>
+  <div class="sub">Hive → Dashboard, every second</div>
+
+  <div class="row"><span class="k">Status</span><span class="v"><span class="dot" id="dot"></span><span id="state">idle</span></span></div>
+  <div class="row"><span class="k">Orders captured</span><span class="v" id="count">0</span></div>
+  <div class="row"><span class="k">Receiver info</span><span class="v" id="details">0</span></div>
+  <div class="row"><span class="k">Last update</span><span class="v" id="last">—</span></div>
+  <div class="row"><span class="k">Scrapes</span><span class="v" id="scrapes">0</span></div>
+
+  <label class="k" for="dashboardUrl" style="display:block;margin-top:12px;font-size:11.5px">Dashboard URL</label>
+  <input id="dashboardUrl" type="url" spellcheck="false"
+         style="width:100%;margin-top:4px;padding:6px 8px;border-radius:8px;box-sizing:border-box;
+                background:rgba(15,23,42,.8);border:1px solid rgba(255,255,255,.16);color:#e8eefc;font:12px inherit" />
+
+  <button id="toggle">Pause scraping</button>
+  <button id="open" class="ghost">Open dashboard</button>
+  <button id="clear" class="ghost">Clear captured data</button>
+
+  <div class="hint" id="hint">
+    Keep <code>hive.carrybee.com/orders</code> open in a tab — this panel and the
+    dashboard update on their own.
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
