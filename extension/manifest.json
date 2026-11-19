@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Jitben · Hive → Dashboard Live",
+  "version": "1.0.0",
+  "description": "Reads order status and receiver info from hive.carrybee.com/orders every second and streams it into the Jitben Ops Dashboard — no clicking, no manual export.",
+  "permissions": ["storage", "tabs", "scripting"],
+  "host_permissions": [
+    "https://hive.carrybee.com/*",
+    "https://*.workers.dev/*",
+    "http://localhost:8787/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Jitben live bridge", "default_popup": "popup.html" },
+  "content_scripts": [
+    {
+      "matches": ["https://hive.carrybee.com/*"],
+      "js": ["content-hive.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://*.workers.dev/*", "http://localhost:8787/*"],
+      "js": ["content-dashboard.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

@@ -35,6 +35,10 @@ jobs:
 
       - run: npm ci
 
+      # Guards the extension's DOM heuristics against regressions.
+      - name: Test scraper heuristics
+        run: npm run test:scraper
+
       # Fails the build if the Worker entry/assets no longer bundle.
       - name: Typecheck Worker bundle (dry run)
         run: npx wrangler deploy --dry-run --outdir dist
