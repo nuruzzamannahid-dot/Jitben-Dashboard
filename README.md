@@ -74,12 +74,21 @@ The Worker is published to `https://jitben-dashboard.<your-subdomain>.workers.de
 ### CI deploy from GitHub
 
 `.github/workflows/deploy-cloudflare.yml` deploys on every push to `main`.
-Add two repository secrets (**Settings → Secrets and variables → Actions**):
+Add repository secrets (**Settings → Secrets and variables → Actions**):
 
 | Secret | Where to get it |
 |---|---|
-| `CLOUDFLARE_API_TOKEN` | Dash → My Profile → API Tokens → *Edit Cloudflare Workers* template |
+| `CLOUDFLARE_API_TOKEN` | Dash → My Profile → API Tokens → **Create Token** → *Edit Cloudflare Workers* template → value starts with `cfut_` |
 | `CLOUDFLARE_ACCOUNT_ID` | Dash → Workers & Pages → Account ID (right sidebar) |
+| `CLOUDFLARE_EMAIL` | optional — only if you use a Global API Key instead of a token |
+
+**Use an API token, not the Global API Key.** Cloudflare prefixes make the two
+easy to tell apart: `cfut_…` user token, `cfat_…` account token, `cfk_…` Global
+API Key. A `cfk_` key authenticates with `X-Auth-Key` + `X-Auth-Email`, so it is
+rejected as `Invalid API Token` on the Bearer path — the workflow detects the
+prefix and either switches to key auth (when `CLOUDFLARE_EMAIL` is set) or warns
+and skips the deploy. Prefer a scoped `cfut_` token: it can be limited to
+*Workers Scripts: Edit* on one account, and rolled without touching your email.
 
 Optionally attach a custom domain in **Workers & Pages → jitben-dashboard → Settings → Domains & Routes**.
 
