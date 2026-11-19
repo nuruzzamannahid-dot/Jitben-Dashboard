@@ -1,6 +1,17 @@
 {
   "name": "jitben-ops-dashboard",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "scripts": { "dev": "npx serve .", "start": "npx serve ." }
+  "description": "Jitben Ops Dashboard — static dashboard served by a Cloudflare Worker, with Supabase (Postgres) as the live data source.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "start": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:dry-run": "wrangler deploy --dry-run --outdir dist",
+    "logs": "wrangler tail",
+    "types": "wrangler types"
+  },
+  "devDependencies": {
+    "wrangler": "^4.165.0"
+  }
 }
