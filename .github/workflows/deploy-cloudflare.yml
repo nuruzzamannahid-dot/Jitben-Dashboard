@@ -128,7 +128,9 @@ jobs:
               | sed -n 's/.*"subdomain":"\([^"]*\)".*/\1/p'
           }
 
-          sub=$(read_sub)
+          raw=$(curl -sS --max-time 20 "${auth[@]}" "$base/accounts/$ACCOUNT_ID/workers/subdomain")
+          echo "subdomain GET: $(printf '%s' "$raw" | tr -d '\n' | cut -c1-300)"
+          sub=$(printf '%s' "$raw" | sed -n 's/.*"subdomain":"\([^"]*\)".*/\1/p')
           if [ -n "$sub" ]; then
             echo "::notice::workers.dev subdomain already registered: $sub.workers.dev"
             echo "subdomain=$sub" >> "$GITHUB_OUTPUT"
@@ -182,17 +184,21 @@ jobs:
           plain=$(sed -e 's/\x1b\[[0-9;]*m//g' deploy.log)
 
           worker=$(sed -n 's/.*"name": *"\([^"]*\)".*/\1/p' wrangler.jsonc | head -n 1)
+          echo "URLs in deploy output:"
+          printf '%s' "$plain" | grep -oE 'https://[A-Za-z0-9._/-]+\.workers\.dev' | sort -u | head -n 5 | while read -r u; do
+            echo "  $u"
+            echo "::notice::deploy URL: $u"
+          done
           url=$(printf '%s' "$plain" | grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' | tail -n 1)
-          if [ -z "$url" ] && [ -n "$SUBDOMAIN" ] && [ -n "$worker" ]; then
-            url="https://$worker.$SUBDOMAIN.workers.dev"
-          fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
           if [ "$status" -ne 0 ]; then
             echo "::error::wrangler deploy failed (exit $status): $(printf '%s' "$plain" | grep -iE 'error|invalid|unauthor|forbidden|denied|not found|code:' | tail -n 4 | tr '\n' ' ' | cut -c1-800)"
             exit "$status"
           fi
-          echo "::notice::Deployed $worker to ${url:-an unknown URL}"
+          if [ -z "$url" ]; then
+            echo "::warning::wrangler did not print a workers.dev URL for $worker (account subdomain output: '${SUBDOMAIN:-unknown}')."
+          fi
 
       - name: Smoke test /api/health
         if: steps.deploy.outputs.url != ''
