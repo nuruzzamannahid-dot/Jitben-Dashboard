@@ -491,14 +491,23 @@ function renderKpis() {
   const withName = c(o => o.name);
   const pctOf = (n) => (t ? (n === t ? 'all ' : '') + n.toLocaleString() + ' of ' + t.toLocaleString() : '0');
 
+  const live = [...LIVE_BY_FID.values()];
+  const liveNamed = live.filter(r => r.receiver_name).length;
+  const liveDetailed = live.filter(r => r.receiver_name || r.address || r.phone).length;
+  const ago = LIVE_AT ? Math.max(0, Math.round((Date.now() - LIVE_AT) / 1000)) : null;
+  const bridgeNote = live.length
+    ? ' <b>Live bridge:</b> ' + live.length.toLocaleString() + ' rows received, ' +
+      liveDetailed.toLocaleString() + ' with receiver info (' + liveNamed.toLocaleString() + ' with a name)' +
+      (ago === null ? '' : ', last ' + ago + 's ago') + '.'
+    : ' <b>Live bridge:</b> no rows received from the extension yet.';
+
   $('#qualityNote').innerHTML =
     '<b>Data note.</b> Receiver name present for ' + pctOf(withName) +
     ', address for ' + pctOf(withAddr) +
     ', phone for ' + withPhone.toLocaleString() +
-    '. Rows added live from Hive only carry the fields Hive renders in its list view — ' +
-    'open an order’s detail panel once to capture its name and address. ' +
-    'Phone stays sparse because Hive’s order page shows a shared merchant line, not the receiver’s,' +
-    ' which the pipeline rejects rather than writing a wrong number.';
+    '. Rows that come from Sheet data only have what the sheet has; live Hive rows carry whatever ' +
+    'the extension could read, and a missing field is left empty rather than guessed.' +
+    bridgeNote;
 }
 
 /* ---------------- status bars ---------------- */
@@ -651,6 +660,29 @@ function renderDod() {
    Receiver details from Hive win, because they are the most recent. */
 let LIVE_ROWS = null;
 
+/* Every row the extension has ever sent, merged by fid with non-empty fields
+   winning. Snapshots are not guaranteed to be complete (a virtualised list, a
+   scroll mid-render, or a second copy of the extension can post a sparse row for
+   an order we already know), and `load()` re-applies this map, so a sparse
+   message can never downgrade a row that already had a name or address. */
+let LIVE_BY_FID = new Map();
+let LIVE_AT = 0;
+
+function adoptLiveRows(rows) {
+  if (!Array.isArray(rows)) return;
+  for (const r of rows) {
+    if (!r || !r.fid) continue;
+    const prev = LIVE_BY_FID.get(r.fid) || {};
+    const merged = { ...prev };
+    for (const [k, v] of Object.entries(r)) {
+      if (v !== '' && v !== null && v !== undefined) merged[k] = v;
+    }
+    LIVE_BY_FID.set(r.fid, merged);
+  }
+  LIVE_ROWS = [...LIVE_BY_FID.values()];
+  LIVE_AT = Date.now();
+}
+
 function applyLiveRows(rows) {
   if (!Array.isArray(rows) || !rows.length) return;
 
@@ -737,7 +769,7 @@ window.addEventListener('message', (e) => {
   // Chrome reports the posting window; jsdom/tests report null. A cross-origin
   // iframe would report its own window, so that stays rejected.
   if ((e.source && e.source !== window) || !e.data || e.data.type !== 'jitben:live') return;
-  LIVE_ROWS = e.data.rows || [];
+  adoptLiveRows(e.data.rows || []);
   if (ORDERS.length) applyLiveRows(LIVE_ROWS);
 });
 

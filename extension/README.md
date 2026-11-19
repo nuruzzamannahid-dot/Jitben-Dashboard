@@ -20,6 +20,11 @@ Two sources, one row shape:
 1. **The page's own JSON** — `injected.js` wraps `fetch`/`XMLHttpRequest` and
    reads `#__NEXT_DATA__`. Whatever the site already loaded is walked for
    order records; this is where receiver **name / phone / address** come from.
+   A server-rendered list never fires an XHR, so the hook also sweeps the markup
+   the app shipped: `#__NEXT_DATA__`, `script[type="application/json"]`, and
+   `data-page` / `data-json` / `data-state` / `data-orders` attributes. JSON
+   responses served as `text/plain` (or with no content-type) are read too,
+   instead of being skipped for lacking `application/json`.
 2. **The DOM** — `content-hive.js` still scrapes rendered rows, which is what
    gives you statuses for orders that are on screen.
 
@@ -35,6 +40,22 @@ when the popup opens, and once per service-worker start (throttled), the worker
 re-runs the current `content-hive.js` / `content-dashboard.js` in every matching
 tab. Both scripts carry a version guard, so the re-run is a no-op in tabs that
 are already current.
+
+The page accumulates every row it is ever sent, keyed by `fid`, with non-empty
+fields winning — a sparse or out-of-order snapshot (a virtualised list, a second
+copy of the extension, a row rendered without details) can never blank a field
+that was already known, and `load()` re-applies the accumulated map.
+
+The customer table's data note ends with a **Live bridge** line:
+
+```
+Live bridge: 9 rows received, 9 with receiver info (3 with a name), last 1s ago
+```
+
+That is the page's own view of what the extension delivered. If it says
+`9 rows received, 0 with receiver info` the snapshot itself was empty and the
+problem is on the Hive side; if it says `9 with receiver info` while cells show
+`—`, the problem is on the page side. No guessing.
 
 The dashboard tab is fed **two ways**: the instant push from the service worker
 *and* a 1.5 s poll of `jitben:get`. The poll is what guarantees convergence — if
@@ -133,6 +154,9 @@ npm test                 # scraper + JSON miner, live bridge, dashboard
   an end-to-end payload → snapshot check.
 - `test/bridge.test.mjs` — reproduces the “popup says 20/20, page shows —”
   failure with **no** broadcast at all and proves the page self-heals by polling.
+- `test/hook.test.mjs` — page-world hook: `hello`, a `text/plain` JSON response,
+  a `script[type="application/json"]` blob and a `data-page` attribute, then the
+  miner turning the SSR blob into a full row (name, phone, address, city).
 - `test/background.test.mjs` — service worker: `jitben:get` returns `meta`, a
   meta-less snapshot cannot erase details, and install/update re-injects into
   the Hive tab (+ MAIN-world hook) and the dashboard tab only.
