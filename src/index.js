@@ -46,6 +46,8 @@ const SECURITY_HEADERS = {
   "x-content-type-options": "nosniff",
   "referrer-policy": "strict-origin-when-cross-origin",
   "x-frame-options": "SAMEORIGIN",
+  // Customer names/addresses/phones must never land in a search index.
+  "x-robots-tag": "noindex, nofollow",
 };
 
 function withHeaders(res) {
@@ -100,7 +102,7 @@ function ordersResponse(request) {
   return new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "cache-control": "public, max-age=60, stale-while-revalidate=300",
+      "cache-control": "no-store",
       etag,
       ...SECURITY_HEADERS,
     },

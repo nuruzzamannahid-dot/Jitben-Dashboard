@@ -1,0 +1,3 @@
+# Internal ops dashboard — contains customer PII. Do not index.
+User-agent: *
+Disallow: /
