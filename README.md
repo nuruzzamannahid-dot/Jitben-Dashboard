@@ -64,9 +64,9 @@ Endpoints: `GET /`, `GET /config.js`, `GET /api/orders[?status=&q=]`, `GET /api/
 | Pipeline | `.github/workflows/deploy-cloudflare.yml` — push to `main` |
 
 `GET /api/health` on the live Worker answers
-`{"ok":true,"orders":1098,"range":{"start":"2026-10-10","end":"2026-11-17"},…}`.
-The dashboard currently shows `1,098 orders · bundled`; set the Supabase
-vars (below) and it switches to `· live`.
+`{"ok":true,"source":"sheet","orders":1135,"from_sheet":1135,"with_details":1098,"range":{"start":"2026-10-10","end":"2026-11-18"},…}`
+— i.e. the dashboard is reading the Google Sheet live (`1,135 orders · live`),
+with customer details joined from `data/orders.json` for 1,098 of them.
 
 The workflow creates the account's `workers.dev` subdomain automatically when
 none exists — pin a specific name with the repository variable
