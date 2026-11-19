@@ -79,6 +79,7 @@ jobs:
 
       - name: Verify Cloudflare credentials
         if: steps.creds.outputs.mode != 'none'
+        id: verify
         env:
           MODE: ${{ steps.creds.outputs.mode }}
           ACCOUNT_ID: ${{ steps.creds.outputs.account }}
@@ -86,18 +87,39 @@ jobs:
           EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
         run: |
           set +e
+          base=https://api.cloudflare.com/client/v4
+
           if [ "$MODE" = "key" ]; then
-            body=$(curl -sS --max-time 20 -H "X-Auth-Key: $TOKEN" -H "X-Auth-Email: $EMAIL" \
-              https://api.cloudflare.com/client/v4/user)
+            body=$(curl -sS --max-time 20 -H "X-Auth-Key: $TOKEN" -H "X-Auth-Email: $EMAIL" "$base/user")
+            kind="global API key"
           else
-            body=$(curl -sS --max-time 20 -H "Authorization: Bearer $TOKEN" \
-              https://api.cloudflare.com/client/v4/user/tokens/verify)
+            case "$TOKEN" in
+              cfat_*) url="$base/accounts/$ACCOUNT_ID/tokens/verify"; kind="account token" ;;
+              *)      url="$base/user/tokens/verify";              kind="user token" ;;
+            esac
+            body=$(curl -sS --max-time 20 -H "Authorization: Bearer $TOKEN" "$url")
           fi
-          echo "verify response: $body"
+          echo "verify ($kind): $body"
           if printf '%s' "$body" | grep -q '"success":true'; then
-            echo "::notice::Cloudflare credentials accepted."
+            echo "::notice::$kind accepted by Cloudflare."
           else
-            echo "::error::Cloudflare rejected the credentials: $(printf '%s' "$body" | tr -d '\n' | cut -c1-600)"
+            echo "::error::Cloudflare rejected the $kind: $(printf '%s' "$body" | tr -d '\n' | cut -c1-500)"
+          fi
+
+          # Does this account have a workers.dev subdomain? wrangler refuses to
+          # publish a workers.dev service without one.
+          resp=$(curl -sS --max-time 20 -w '\n%{http_code}' -H "Authorization: Bearer $TOKEN" \
+            "$base/accounts/$ACCOUNT_ID/workers/subdomain")
+          code=$(printf '%s' "$resp" | tail -n 1)
+          body=$(printf '%s' "$resp" | sed '$d')
+          echo "subdomain check HTTP $code: $body"
+          sub=$(printf '%s' "$body" | sed -n 's/.*"subdomain":"\([^"]*\)".*/\1/p')
+          if [ "$code" = "200" ] && [ -n "$sub" ]; then
+            echo "::notice::workers.dev subdomain: $sub.workers.dev"
+          elif [ "$code" = "200" ]; then
+            echo "::error::This account has no workers.dev subdomain yet. Register one at https://dash.cloudflare.com/$ACCOUNT_ID/workers/onboarding (or add a route to wrangler.jsonc and set \"workers_dev\": false)."
+          else
+            echo "::error::Cannot read the account's workers.dev subdomain (HTTP $code): $(printf '%s' "$body" | tr -d '\n' | cut -c1-400) — the token likely lacks Account Settings: Read / Workers Scripts: Edit."
           fi
 
       - name: Deploy
