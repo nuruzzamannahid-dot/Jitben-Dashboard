@@ -230,7 +230,9 @@ jobs:
             code=$(curl -s -o body.txt -w '%{http_code}' --max-time 20 "$URL/api/health")
             echo "attempt $i: HTTP $code"
             if [ "$code" = "200" ] && head -c 400 body.txt; then
-              echo; exit 0
+              echo
+              echo "::notice::health: $(tr -d '\n' < body.txt | cut -c1-700)"
+              exit 0
             fi
             sleep 15
           done
