@@ -114,6 +114,33 @@ Optionally attach a custom domain in **Workers & Pages → jitben-dashboard → 
 Vercel hosting still works if you prefer it: `vercel.json` points at `public/`
 (no build command). Cloudflare is now the primary target.
 
+## Live data from Google Sheets
+
+The Worker merges the **“Jitben data dump”** sheet into the dataset on every
+request, so editing the sheet updates the dashboard without a redeploy.
+
+| | |
+|---|---|
+| Sheet | `1vIwR22w8QfYLpt9QlC4fpbQweJGgg0MdhPXv9oMB32M` (`Sheet1`) |
+| Columns used | `fid`, `transfer_status`, `created_at`, `transfer_status_updated_at` |
+| Merge rule | sheet status wins per `fid`; orders that exist only in the sheet are added with blank customer details |
+| Details | receiver name / phone / address come from `data/orders.json` (the sheet has none) |
+| Cache | edge cache, `SHEET_TTL_SECONDS` (default 120s) |
+
+**Requirement:** the sheet must be readable as CSV, i.e. *Share → Anyone with
+the link → Viewer* (or File → Share → Publish to web). No API key is involved.
+
+```
+GET /api/orders            → merged rows; headers x-data-source: sheet|bundle
+GET /api/orders?refresh=1  → bypass the edge cache
+GET /api/health            → source, sheet rows, freshness, last error
+```
+
+Override the source with Worker vars `SHEET_ID` / `SHEET_NAME`, or point
+`SHEET_CSV_URL` at any CSV (useful for tests). If Google is unreachable the
+Worker serves the bundled dataset and `/api/health` reports why — the dashboard
+never goes blank.
+
 ## Data notes
 
 | Field | Coverage |

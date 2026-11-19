@@ -160,6 +160,26 @@ jobs:
           done
           echo "::error::Could not determine or register a workers.dev subdomain: $(printf '%s' "$out" | tr -d '\n' | cut -c1-400)"
 
+      # The Worker merges live statuses from the Google Sheet. That only works
+      # if the sheet is link-shared; report it plainly instead of silently
+      # falling back to the bundled dataset.
+      - name: Check Google Sheet is publicly readable
+        env:
+          SHEET_ID: ${{ vars.SHEET_ID || '1vIwR22w8QfYLpt9QlC4fpbQweJGgg0MdhPXv9oMB32M' }}
+          SHEET_NAME: ${{ vars.SHEET_NAME || 'Sheet1' }}
+        run: |
+          url="https://docs.google.com/spreadsheets/d/$SHEET_ID/gviz/tq?tqx=out:csv&sheet=$SHEET_NAME"
+          code=$(curl -sSL -o sheet.csv -w '%{http_code}' --max-time 30 "$url")
+          bytes=$(wc -c < sheet.csv | tr -d ' ')
+          rows=$(( $(wc -l < sheet.csv) - 1 ))
+          echo "HTTP $code, $bytes bytes, $rows data rows"
+          head -c 200 sheet.csv; echo
+          if [ "$code" = "200" ] && [ "$bytes" -gt 100 ] && ! head -c 1 sheet.csv | grep -q '<'; then
+            echo "::notice::Sheet CSV readable: $rows rows, headers: $(head -n 1 sheet.csv | cut -c1-120)"
+          else
+            echo "::warning::Sheet CSV is NOT publicly downloadable (HTTP $code). Share → 'Anyone with the link' → Viewer, or the dashboard keeps serving the bundled dataset."
+          fi
+
       - name: Deploy
         id: deploy
         if: steps.creds.outputs.mode != 'none'
