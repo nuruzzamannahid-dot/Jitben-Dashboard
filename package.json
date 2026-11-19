@@ -12,8 +12,9 @@
     "types": "wrangler types",
     "test:scraper": "node extension/test/scraper.test.mjs",
     "test:dashboard": "node test/dashboard.test.mjs",
-    "test": "npm run test:scraper && npm run test:bridge && npm run test:dashboard",
-    "test:bridge": "node test/bridge.test.mjs"
+    "test": "npm run test:scraper && npm run test:background && npm run test:bridge && npm run test:dashboard",
+    "test:bridge": "node test/bridge.test.mjs",
+    "test:background": "node test/background.test.mjs"
   },
   "devDependencies": {
     "jsdom": "^25.0.1",

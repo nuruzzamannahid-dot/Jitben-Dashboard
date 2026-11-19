@@ -91,6 +91,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg?.type === "jitben:resync") {
+    resyncOpenTabs().then(sendResponse).catch((e) => sendResponse({ error: String(e) }));
+    return true;
+  }
+
   if (msg?.type === "jitben:snapshot") {
     handleSnapshot(msg)
       .then(() => sendResponse({ ok: true }))
@@ -100,7 +105,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg?.type === "jitben:get") {
     readState()
-      .then((state) => sendResponse({ rows: Object.values(state.byFid), updatedAt: state.updatedAt, scrapes: state.scrapes }))
+      .then((state) =>
+        sendResponse({
+          rows: Object.values(state.byFid),
+          updatedAt: state.updatedAt,
+          scrapes: state.scrapes,
+          meta: state.meta || null,
+        }),
+      )
       .catch((e) => sendResponse({ rows: [], error: String(e) }));
     return true;
   }
@@ -127,6 +139,60 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return false;
 });
 
+/* Reloading an unpacked extension does NOT re-inject content scripts into tabs
+ * that are already open: those keep running the old file for the rest of their
+ * life (and an old Hive script never reports payload/hook state). So on install
+ * or update we push the current scripts into every matching tab ourselves. The
+ * scripts carry a version guard, so a tab that is already current is untouched.
+ */
+let lastResync = 0;
+
+const HOST_SCRIPTS = [
+  { match: /^https:\/\/hive\.carrybee\.com\//i, files: ["content-hive.js"] },
+  { match: /^https:\/\/([a-z0-9-]+\.)+workers\.dev\//i, files: ["content-dashboard.js"] },
+  { match: /^http:\/\/localhost:8787\//i, files: ["content-dashboard.js"] },
+];
+
+async function resyncOpenTabs(force = false) {
+  if (!force && Date.now() - lastResync < 30_000) return { repaired: 0, skipped: true };
+  lastResync = Date.now();
+  let repaired = 0;
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({});
+  } catch {
+    return { repaired };
+  }
+
+  for (const tab of tabs) {
+    if (!tab.id || !tab.url) continue;
+    for (const target of HOST_SCRIPTS) {
+      if (!target.match.test(tab.url)) continue;
+      try {
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: target.files });
+        repaired++;
+      } catch {
+        /* chrome:// pages, store pages, discarded tabs … */
+      }
+      if (target.files[0] === "content-hive.js") {
+        injectedTabs.delete(tab.id); // let the fresh script ask for a hook
+        await installMainWorldHook(tab.id);
+      }
+    }
+  }
+  return { repaired };
+}
+
 chrome.runtime.onInstalled.addListener(() => {
-  console.info("[jitben] extension installed — open hive.carrybee.com/orders and the dashboard.");
+  resyncOpenTabs().then(({ repaired }) => {
+    console.info("[jitben] installed/updated — refreshed", repaired, "open tab(s)");
+  });
 });
+
+chrome.runtime.onStartup.addListener(() => {
+  resyncOpenTabs(true);
+});
+
+// The worker also wakes for ordinary messages; a throttled resync here means a
+// browser restart (or a worker restart) repairs old tabs without any clicking.
+setTimeout(() => resyncOpenTabs(), 500);

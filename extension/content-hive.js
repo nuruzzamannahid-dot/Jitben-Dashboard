@@ -13,6 +13,11 @@
 (() => {
   "use strict";
 
+  // Re-injected into tabs that are already open (see resyncOpenTabs), so make a
+  // second copy a no-op instead of a second scrape loop.
+  if ((window.__jitbenHiveV || 0) >= 3) return;
+  window.__jitbenHiveV = 3;
+
   const STATUSES = [
     "On The Way To Central Warehouse",
     "On The Way To Last Mile Hub",
@@ -508,7 +513,7 @@
     if (msg?.type === "jitben:pause") paused = !!msg.value;
     if (msg?.type === "jitben:scrape-now") {
       lastSignature = "";
-      const rows = scrape();
+      const rows = currentRows();
       chrome.runtime.sendMessage({
         type: "jitben:snapshot",
         rows,

@@ -35,7 +35,10 @@ async function render() {
   if (!rows.length) {
     $("hint").innerHTML =
       'Open <code>hive.carrybee.com/orders</code> in a tab — rows are captured on their own, then streamed here and to the dashboard.';
-  } else if (rows.length && meta.hook !== "on") {
+  } else if (!meta.hook) {
+    $("hint").innerHTML =
+      "The Hive tab is still running the previous script, so receiver details cannot be read yet. Opening this popup re-injects it — give it a couple of seconds, then check <b>Payload hook</b>.";
+  } else if (meta.hook === "off") {
     $("hint").innerHTML =
       "Statuses are flowing, but the payload hook is off, so receiver details cannot be read. Reload the Hive tab once (the hook installs at page start).";
   } else if (!withDetails) {
@@ -72,3 +75,8 @@ $("dashboardUrl").addEventListener("change", async (e) => {
 
 render();
 setInterval(render, 1000);
+
+// Ask the worker to push fresh scripts into already-open tabs. This is the one
+// moment we know the user is looking, so a stale Hive/dashboard tab gets
+// repaired here instead of silently streaming half the data.
+chrome.runtime.sendMessage({ type: "jitben:resync" }).catch(() => {});
