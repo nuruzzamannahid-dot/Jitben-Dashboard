@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(here, "..", "content-hive.js"), "utf8");
 
-function scrape(html) {
+function load(html, opts = {}) {
   const dom = new JSDOM(`<!doctype html><body>${html}</body>`, {
     url: "https://hive.carrybee.com/orders",
     pretendToBeVisual: true, // otherwise document.hidden === true and the loop no-ops
@@ -30,12 +30,16 @@ function scrape(html) {
     dom.window.document,
     chrome,
     dom.window.MutationObserver,
-    () => 0,
+    opts.timers ? dom.window.setInterval : () => 0,
     { info() {}, warn() {}, debug() {}, error() {} },
     dom.window.location,
   );
 
-  return captured;
+  return { captured, window: dom.window };
+}
+
+function scrape(html) {
+  return load(html).captured;
 }
 
 let failures = 0;
@@ -91,7 +95,123 @@ check("fallback: no bleed into next order", blob[1].status, "Return");
 check("fallback: second receiver", blob[1].receiver_name, "Shirin Sultana");
 check("fallback: full address retained", blob[0].address, "22 Baker Street, Gulshan, Dhaka");
 
-// ---- 4. page with no orders ------------------------------------------------
+
+// ---- 4. JSON miner: reads the site's own API payloads ----------------------
+// (the list view shows only id + status + date, so this is how receiver info
+//  is captured without clicking anything)
+{
+  const { window: win } = load("<div>no orders in the dom</div>");
+  const { minePayload } = win.__jitbenMiner;
+
+  const listPayload = {
+    status: "ok",
+    data: {
+      meta: { total: 2 },
+      orders: [
+        {
+          id: 9132,
+          order: { code: "F1010R92BM9" },
+          transfer_status: "Delivered",
+          created_at: "2026-10-10T20:53:10Z",
+          receiver: { name: "Fahim", phone: "01712345678", address: "Bhola, Bangladesh" },
+          merchant: { name: "Jitben.com" },
+        },
+        {
+          order_code: "F1010FKMR6G",
+          status: "paid return",
+          customer_name: "Nazim Uddin",
+          customer_phone: "+8801912345678",
+          shipping_address: "Khanhat, Gachbaria, Chandanaish",
+          order_date: "2026-10-11 09:12:00",
+        },
+      ],
+    },
+  };
+
+  const mined = minePayload(listPayload);
+  check("miner: finds both records", mined.length, 2);
+  check("miner: fid from nested code", mined[0].fid, "F1010R92BM9");
+  check("miner: receiver nested object", mined[0].receiver_name, "Fahim");
+  check("miner: phone normalised", mined[0].phone, "01712345678");
+  check("miner: address", mined[0].address, "Bhola, Bangladesh");
+  check("miner: merchant is not the receiver", mined[0].receiver_name === "Jitben.com", false);
+  check("miner: iso date", mined[0].order_date, "2026-10-10");
+  check("miner: status casing normalised", mined[1].status, "Paid Return");
+  check("miner: flat customer_name", mined[1].receiver_name, "Nazim Uddin");
+  check("miner: date from plain string", mined[1].order_date, "2026-10-11");
+
+  const nested = minePayload({ a: [{ b: { c: [{ result: { rows: [
+    { consignment: "F1020NEWONE", delivery_status: "At The Sorting Hub",
+      consignee: { full_name: "Rumi Akter", mobile: "01898765432", full_address: "House 12, Road 4, Dhanmondi" } },
+  ] } }] } }] });
+  check("miner: walks deep nesting", nested.length, 1);
+  check("miner: consignee full_name", nested[0].receiver_name, "Rumi Akter");
+  check("miner: mobile key", nested[0].phone, "01898765432");
+
+  check("miner: ignores payloads without order ids", minePayload({ users: [{ name: "x" }], total: 3 }).length, 0);
+  check("miner: handles null safely", minePayload(null).length, 0);
+}
+
+// ---- 5. DOM rows must not invent a name from navigation text --------------
+{
+  const rows = scrape(`
+  <nav><a>Orders</a><a>Dashboard</a><a>Settings</a></nav>
+  <div class="order-row"><span>F1050NAVONLY</span><span>Delivered</span></div>`);
+  check("dom: status kept", rows[0]?.status, "Delivered");
+  check("dom: no fabricated receiver", rows[0]?.receiver_name, "");
+}
+
+
+// ---- 6. end to end: a JSON payload becomes a sent snapshot ---------------
+// This is the whole point: the page loads orders over fetch/XHR, the MAIN-world
+// hook posts the payload here, and the receiver fields ride along into the
+// dashboard without anyone clicking anything.
+{
+  const { captured, window: win } = load("<div>loading…</div>", { timers: true });
+
+  win.dispatchEvent(
+    new win.MessageEvent("message", {
+      source: null,
+      data: {
+        __jitben: "json",
+        url: "https://hive.carrybee.com/api/v1/orders?page=1",
+        data: {
+          data: {
+            orders: [
+              {
+                order: { code: "F1060E2E001" },
+                transfer_status: "Delivered",
+                receiver: { name: "E2E Receiver", phone: "01700000000", address: "Road 1, Dhanmondi, Dhaka" },
+                created_at: "2026-11-18T10:00:00Z",
+              },
+              {
+                order_code: "F1060E2E002",
+                order_status: "On The Way To Last Mile Hub",
+                customer_name: "Second Person",
+                customer_phone: "01811111111",
+                shipping_address: "Sector 9, Uttara",
+              },
+            ],
+          },
+        },
+      },
+    }),
+  );
+
+  await new Promise((r) => setTimeout(r, 1300));
+
+  const first = captured.find((r) => r.fid === "F1060E2E001");
+  const second = captured.find((r) => r.fid === "F1060E2E002");
+  check("e2e: payload reached the snapshot", captured.length, 2);
+  check("e2e: receiver name", first?.receiver_name, "E2E Receiver");
+  check("e2e: receiver phone", first?.phone, "01700000000");
+  check("e2e: receiver address", first?.address, "Road 1, Dhanmondi, Dhaka");
+  check("e2e: status", first?.status, "Delivered");
+  check("e2e: order date", first?.order_date, "2026-11-18");
+  check("e2e: second row name", second?.receiver_name, "Second Person");
+}
+
+// ---- 7. page with no orders ------------------------------------------------
 check("empty page yields nothing", scrape("<div>No orders yet</div>").length, 0);
 
 console.log(failures ? `\n${failures} assertion(s) failed` : "\nAll scraper assertions passed");

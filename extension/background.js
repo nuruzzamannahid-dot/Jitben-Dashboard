@@ -64,7 +64,32 @@ async function broadcast(rows) {
   }
 }
 
+const injectedTabs = new Set();
+
+async function installMainWorldHook(tabId) {
+  if (!tabId || injectedTabs.has(tabId)) return { ok: true, skipped: true };
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", files: ["injected.js"] });
+    injectedTabs.add(tabId);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message ? e.message : e) };
+  }
+}
+
+// A navigation throws away the MAIN-world state, so forget the tab and let the
+// content script ask for a fresh injection.
+chrome.tabs.onRemoved.addListener((tabId) => injectedTabs.delete(tabId));
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.status === "loading") injectedTabs.delete(tabId);
+});
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type === "jitben:inject-main") {
+    installMainWorldHook(sender.tab?.id).then(sendResponse);
+    return true;
+  }
+
   if (msg?.type === "jitben:snapshot") {
     handleSnapshot(msg)
       .then(() => sendResponse({ ok: true }))

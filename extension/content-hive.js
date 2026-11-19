@@ -37,6 +37,13 @@
 
   const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
 
+  function toIsoDate(value) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(clean(value));
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    const d = DATE_RE.exec(clean(value));
+    return d ? `${d[3]}-${d[2].padStart(2, "0")}-${d[1].padStart(2, "0")}` : "";
+  }
+
   /** innerText when available; otherwise walk the DOM inserting separators so
    *  adjacent cells ("F1010R92BM9" + "Delivered") do not fuse into one word. */
   function textOf(node) {
@@ -158,16 +165,144 @@
   function rowFromText(text, fid) {
     const status = findStatus(text);
     if (!status) return null;
+
+    const phone = findPhone(text);
+    const address = findAddress(text);
+    const labelledName = labelled(text, ["receiver", "customer", "consignee", "গ্রাহক", "প্রাপক"]);
+
+    // findReceiverName() already prefers a labelled value and trims the address
+    // off it. Its unlabelled guess is only believable when the same block also
+    // carries an address or phone — otherwise it is navigation/UI text.
+    const candidate = findReceiverName(text, fid);
+    const name = labelledName || address || phone ? candidate : "";
+
     return {
       fid,
       status,
-      receiver_name: findReceiverName(text, fid),
+      receiver_name: name,
       phone: findPhone(text),
       address: findAddress(text),
       city: "",
       order_date: findDate(text),
       source: "hive",
     };
+  }
+
+
+  /* ------------------------------------------------------------------ *
+   * JSON miner
+   *
+   * The list view renders only id + status + date, but the page's own API
+   * payloads usually carry the receiver too. Any JSON the app loads is walked
+   * and any record containing an 11-char order id is turned into a row. This is
+   * structure-driven, so it survives markup changes entirely.
+   * ------------------------------------------------------------------ */
+  const FID_SHAPE = /^F\d{4}[A-Z0-9]{6}$/;
+  const NAME_KEY = /(receiver|customer|consignee|recipient|buyer).*name|^name$|^full_?name$/i;
+  const PHONE_KEY = /(phone|mobile|contact|msisdn)/i;
+  const ADDR_KEY = /(full_?address|shipping_?address|delivery_?address|address|location)/i;
+  const STATUS_KEY = /(transfer_?status|order_?status|delivery_?status|status|state)/i;
+  const DATE_KEY = /(created_?at|order_?date|placed_?at|date)/i;
+  const NOISE_KEY = /(merchant|store|shop|vendor|product|item|sku|brand)/i;
+
+  function deepPick(obj, keyRe, depth = 0, seen = new Set()) {
+    if (!obj || typeof obj !== "object" || depth > 3 || seen.has(obj)) return "";
+    seen.add(obj);
+    for (const [k, v] of Object.entries(obj)) {
+      if (keyRe.test(k) && !NOISE_KEY.test(k)) {
+        if (typeof v === "string" || typeof v === "number") {
+          const val = String(v).trim();
+          if (val) return val;
+        }
+      }
+    }
+    for (const v of Object.values(obj)) {
+      if (v && typeof v === "object") {
+        const hit = deepPick(v, keyRe, depth + 1, seen);
+        if (hit) return hit;
+      }
+    }
+    return "";
+  }
+
+  function fidOf(obj, depth = 0, seen = new Set()) {
+    if (!obj || typeof obj !== "object" || Array.isArray(obj) || depth > 2 || seen.has(obj)) return "";
+    seen.add(obj);
+    for (const v of Object.values(obj)) {
+      if (typeof v === "string" && FID_SHAPE.test(v.trim())) return v.trim();
+    }
+    // ids often live in a nested node: { order: { code: "F1010…" } }
+    for (const v of Object.values(obj)) {
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        const hit = fidOf(v, depth + 1, seen);
+        if (hit) return hit;
+      }
+    }
+    return "";
+  }
+
+  function normaliseStatus(value) {
+    const flat = clean(value);
+    for (const s of STATUSES) if (s.toLowerCase() === flat.toLowerCase()) return s;
+    return findStatus(flat) || "";
+  }
+
+  function rowFromRecord(obj) {
+    const fid = fidOf(obj);
+    if (!fid) return null;
+
+    const status = normaliseStatus(deepPick(obj, STATUS_KEY));
+    const phoneRaw = deepPick(obj, PHONE_KEY);
+    const phone = phoneRaw ? findPhone(phoneRaw) || "" : "";
+
+    return {
+      fid,
+      status: status || "Unknown",
+      receiver_name: deepPick(obj, NAME_KEY),
+      phone,
+      address: deepPick(obj, ADDR_KEY),
+      city: "",
+      order_date: toIsoDate(deepPick(obj, DATE_KEY)),
+      via: "api",
+    };
+  }
+
+  function minePayload(payload) {
+    const out = new Map();
+    const seen = new WeakSet();
+
+    const walk = (node, depth) => {
+      if (!node || typeof node !== "object" || depth > 12 || seen.has(node)) return;
+      seen.add(node);
+
+      if (Array.isArray(node)) {
+        for (const item of node) walk(item, depth + 1);
+        return;
+      }
+
+      const row = rowFromRecord(node);
+      if (row) {
+        const prev = out.get(row.fid);
+        out.set(row.fid, prev ? mergeRecords(prev, row) : row);
+      }
+      for (const v of Object.values(node)) {
+        if (v && typeof v === "object") walk(v, depth + 1);
+      }
+    };
+
+    walk(payload, 0);
+    // An id with nothing else is just an embedded reference, not an order.
+    return [...out.values()].filter(
+      (r) => r.status !== "Unknown" || r.receiver_name || r.address || r.phone,
+    );
+  }
+
+  function mergeRecords(prev, next) {
+    const out = { ...prev };
+    for (const [k, v] of Object.entries(next)) {
+      if (v !== "" && v != null && !(k === "status" && v === "Unknown")) out[k] = v;
+    }
+    return out;
   }
 
   /** Candidate containers, most-specific first. */
@@ -255,13 +390,25 @@
 
   let lastSignature = "";
   let paused = false;
+  const apiRows = new Map(); // fid -> row mined from the page's JSON
+
+  function currentRows() {
+    const byFid = new Map(apiRows);
+    for (const row of scrape()) {
+      const prev = byFid.get(row.fid);
+      byFid.set(row.fid, prev ? mergeRecords(prev, row) : row);
+    }
+    return [...byFid.values()];
+  }
 
   function tick() {
     if (paused || document.hidden) return;
-    const rows = scrape();
+    const rows = currentRows();
     if (!rows.length) return;
 
-    const signature = rows.map((r) => `${r.fid}:${r.status}:${r.receiver_name}:${r.address.length}`).join("|");
+    const signature = rows
+      .map((r) => `${r.fid}:${r.status}:${r.receiver_name}:${r.phone}:${r.address.length}`)
+      .join("|");
     if (signature === lastSignature) return; // nothing changed, stay quiet
     lastSignature = signature;
 
@@ -272,6 +419,39 @@
       console.debug("[jitben] send failed", e);
     }
   }
+
+  // Ask the background worker to install the MAIN-world fetch/XHR hook.
+  try {
+    chrome.runtime.sendMessage({ type: "jitben:inject-main" });
+  } catch {
+    /* extension reloaded */
+  }
+
+  window.addEventListener("message", (e) => {
+    if (e.source && e.source !== window) return;
+    const d = e.data;
+    if (!d || d.__jitben !== "json") return;
+
+    let rows = [];
+    try {
+      rows = minePayload(d.data);
+    } catch (err) {
+      console.debug("[jitben] payload mine failed", err);
+      return;
+    }
+    if (!rows.length) return;
+
+    let changed = false;
+    for (const row of rows) {
+      const prev = apiRows.get(row.fid);
+      const next = prev ? mergeRecords(prev, row) : row;
+      if (!prev || JSON.stringify(prev) !== JSON.stringify(next)) {
+        apiRows.set(row.fid, next);
+        changed = true;
+      }
+    }
+    if (changed) lastSignature = ""; // force the next tick to publish
+  });
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type === "jitben:pause") paused = !!msg.value;
@@ -291,11 +471,21 @@
     mo._last = Date.now();
     tick();
   });
-  try {
-    mo.observe(document.body, { childList: true, subtree: true });
-  } catch {
-    /* body not ready yet */
-  }
+
+  const observeBody = () => {
+    if (!document.body) {
+      document.addEventListener("DOMContentLoaded", observeBody, { once: true });
+      return;
+    }
+    try {
+      mo.observe(document.body, { childList: true, subtree: true });
+    } catch {
+      /* ignore */
+    }
+  };
+  observeBody();
+
+  window.__jitbenMiner = { minePayload, rowFromRecord, toIsoDate, scrape };
 
   console.info("[jitben] live bridge active on", location.host);
 })();
