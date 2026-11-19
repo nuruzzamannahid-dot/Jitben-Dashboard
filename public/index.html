@@ -203,6 +203,14 @@
     vertical-align:top;color:var(--ink-2)}
   tbody tr:last-child td{border-bottom:0}
   tbody tr:hover td{background:rgba(59,130,246,.075)}
+  @media (prefers-reduced-motion:no-preference){
+    tbody tr.fresh td{animation:freshIn 2.6s ease-out}
+    @keyframes freshIn{
+      from{background:rgba(34,197,94,.28)}
+      to{background:rgba(34,197,94,0)}
+    }
+  }
+  tbody tr.fresh td:first-child{box-shadow:inset 2px 0 0 var(--green)}
   .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
     font-size:11.5px;letter-spacing:-.2px}
   .muted{color:var(--mut)}
@@ -642,6 +650,7 @@ function applyLiveRows(rows) {
   if (!Array.isArray(rows) || !rows.length) return;
 
   const byFid = new Map(ORDERS.map(o => [o.fid, o]));
+  const touched = new Set();
   let added = 0, changed = 0;
 
   for (const r of rows) {
@@ -655,6 +664,7 @@ function applyLiveRows(rows) {
         name: r.receiver_name || '', phone: r.phone || '',
         address: r.address || '', city: r.city || '', amount: null
       });
+      touched.add(r.fid);
       added++;
       continue;
     }
@@ -668,7 +678,11 @@ function applyLiveRows(rows) {
       address: r.address || cur.address,
       city: r.city || cur.city
     };
-    if (JSON.stringify(next) !== JSON.stringify(cur)) { byFid.set(r.fid, next); changed++; }
+    if (JSON.stringify(next) !== JSON.stringify(cur)) {
+      byFid.set(r.fid, next);
+      touched.add(r.fid);
+      changed++;
+    }
   }
 
   if (!added && !changed) {
@@ -684,11 +698,30 @@ function applyLiveRows(rows) {
 
   renderKpis(); renderStatus(); renderDod(); fillFilters(); applyFilters(); renderSubtitle();
   requestAnimationFrame(drawTrend);
+  markFresh(touched);
+
+  const bits = [];
+  if (added) bits.push('+' + added);
+  if (changed) bits.push(changed + ' updated');
 
   $('#dot').classList.remove('bad');
   $('#live').classList.add('ext');
   $('#livetxt').textContent = ORDERS.length.toLocaleString() + ' orders · hive live'
-    + (added ? ' (+' + added + ')' : '');
+    + (bits.length ? ' (' + bits.join(', ') + ')' : '');
+}
+
+/** Briefly highlight the rows this snapshot touched, so updates are visible. */
+function markFresh(fids) {
+  if (!fids || !fids.size) return;
+  requestAnimationFrame(() => {
+    document.querySelectorAll('#custTable tbody tr').forEach((tr) => {
+      const idCell = tr.children[1];
+      if (idCell && fids.has(idCell.textContent.trim())) tr.classList.add('fresh');
+    });
+    setTimeout(() => {
+      document.querySelectorAll('#custTable tbody tr.fresh').forEach((tr) => tr.classList.remove('fresh'));
+    }, 2600);
+  });
 }
 
 window.addEventListener('message', (e) => {

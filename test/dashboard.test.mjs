@@ -82,7 +82,7 @@ const snapshot = [
 window.postMessage({ type: "jitben:live", rows: snapshot, ext: true }, "*");
 await sleep(350);
 
-check("header switches to hive live", pillText(), "6 orders · hive live (+1)");
+check("header switches to hive live", pillText(), "6 orders · hive live (+1, 1 updated)");
 check("pill gets the extension class", pill().classList.contains("ext"), true);
 check("new order appears in the table", rows().some((r) => r.textContent.includes("F1099NEWEXT")), true);
 check(
@@ -106,10 +106,14 @@ window.postMessage(
   "*",
 );
 await sleep(300);
+const updatedRow = rows().find((r) => r.textContent.includes(base[0].fid));
+check("status update replaces the old value", updatedRow.querySelector(".pill").textContent, "Delivered");
+check("updated row is flagged for the flash", updatedRow.classList.contains("fresh"), true);
+check("status-only change reports as an update", pillText(), "6 orders · hive live (1 updated)");
 check(
-  "status update replaces the old value",
-  rows().find((r) => r.textContent.includes(base[0].fid)).querySelector(".pill").textContent,
-  "Delivered",
+  "status breakdown recomputed for the new status",
+  [...window.document.querySelectorAll("#statusBars .bar-row .nm")].some((n) => n.textContent === "Return" || n.textContent === "Delivered"),
+  true,
 );
 
 console.log(failures ? `\n${failures} assertion(s) failed` : "\nAll dashboard assertions passed");

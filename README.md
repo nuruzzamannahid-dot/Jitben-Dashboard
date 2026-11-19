@@ -133,7 +133,10 @@ Data precedence on the dashboard, strongest first:
 2. **Google Sheet** (edge fetch, 120s cache) — status only
 3. **`data/orders.json`** bundle — last known snapshot
 
-The header pill tells you which one is active: `hive live`, `live`, or `bundled`.
+The header pill tells you which one is active: `hive live`, `live`, or `bundled`,
+and reports what each snapshot changed — `(+9)` new orders, `(4 updated)`
+status/receiver changes — with changed rows flashing green for a couple of
+seconds.
 Scraper heuristics are unit-tested against table / card / text-blob layouts:
 
 ```bash
