@@ -116,5 +116,11 @@ check(
   true,
 );
 
+check(
+  "data note reports real coverage, not a hard-coded claim",
+  window.document.getElementById("qualityNote").textContent.includes("of 6"),
+  true,
+);
+
 console.log(failures ? `\n${failures} assertion(s) failed` : "\nAll dashboard assertions passed");
 process.exit(failures ? 1 : 0);

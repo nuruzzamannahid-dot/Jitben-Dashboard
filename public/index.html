@@ -488,12 +488,17 @@ function renderKpis() {
     d.append(ll, vv, pp); k.appendChild(d);
   });
 
+  const withName = c(o => o.name);
+  const pctOf = (n) => (t ? (n === t ? 'all ' : '') + n.toLocaleString() + ' of ' + t.toLocaleString() : '0');
+
   $('#qualityNote').innerHTML =
-    '<b>Data note.</b> Receiver name is complete for all ' + t.toLocaleString() +
-    ' orders; address present for ' + withAddr.toLocaleString() +
-    '. Phone is present for only ' + withPhone +
-    ' — Hive’s order page does not expose the receiver’s phone, only a shared merchant line, ' +
-    'so the field is left blank rather than filled with a wrong number.';
+    '<b>Data note.</b> Receiver name present for ' + pctOf(withName) +
+    ', address for ' + pctOf(withAddr) +
+    ', phone for ' + withPhone.toLocaleString() +
+    '. Rows added live from Hive only carry the fields Hive renders in its list view — ' +
+    'open an order’s detail panel once to capture its name and address. ' +
+    'Phone stays sparse because Hive’s order page shows a shared merchant line, not the receiver’s,' +
+    ' which the pipeline rejects rather than writing a wrong number.';
 }
 
 /* ---------------- status bars ---------------- */
