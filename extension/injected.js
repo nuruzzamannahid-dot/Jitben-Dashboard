@@ -11,13 +11,29 @@
 
   const MAX = 200_000; // ignore huge payloads
 
+  let payloads = 0;
+
   const emit = (url, data) => {
+    payloads++;
+    window.__jitbenStats = { payloads, lastUrl: String(url || ""), at: Date.now() };
     try {
       window.postMessage({ __jitben: "json", url: String(url || ""), data }, "*");
     } catch {
       /* unserialisable payload — ignore */
     }
   };
+
+  // Tells the content script the hook is alive (it re-requests if this never
+  // arrives) and lets the popup show hook status instead of guessing.
+  const hello = () => {
+    try {
+      window.postMessage({ __jitben: "hello", href: location.href }, "*");
+    } catch {
+      /* ignore */
+    }
+  };
+  hello();
+  setTimeout(hello, 1500);
 
   const looksJson = (ct) => !!ct && /json/i.test(ct);
   const sizeOk = (text) => typeof text === "string" && text.length < MAX;

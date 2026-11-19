@@ -691,7 +691,11 @@ function applyLiveRows(rows) {
   }
 
   if (!added && !changed) {
-    $('#livetxt').textContent = ORDERS.length.toLocaleString() + ' orders · hive live';
+    // Nothing moved: keep the last "(+N, M updated)" note on screen instead of
+    // wiping it on every repeat snapshot.
+    if (!$('#livetxt').textContent) {
+      $('#livetxt').textContent = ORDERS.length.toLocaleString() + ' orders · hive live';
+    }
     $('#live').classList.add('ext');
     return;
   }

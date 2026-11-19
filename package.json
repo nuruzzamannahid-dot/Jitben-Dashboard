@@ -2,7 +2,7 @@
   "name": "jitben-ops-dashboard",
   "version": "2.0.0",
   "private": true,
-  "description": "Jitben Ops Dashboard — static dashboard served by a Cloudflare Worker, with Supabase (Postgres) as the live data source.",
+  "description": "Jitben Ops Dashboard \u2014 static dashboard served by a Cloudflare Worker, with Supabase (Postgres) as the live data source.",
   "scripts": {
     "dev": "wrangler dev",
     "start": "wrangler dev",
@@ -12,7 +12,8 @@
     "types": "wrangler types",
     "test:scraper": "node extension/test/scraper.test.mjs",
     "test:dashboard": "node test/dashboard.test.mjs",
-    "test": "npm run test:scraper && npm run test:dashboard"
+    "test": "npm run test:scraper && npm run test:bridge && npm run test:dashboard",
+    "test:bridge": "node test/bridge.test.mjs"
   },
   "devDependencies": {
     "jsdom": "^25.0.1",

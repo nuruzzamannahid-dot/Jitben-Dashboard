@@ -134,6 +134,8 @@ check("fallback: full address retained", blob[0].address, "22 Baker Street, Guls
   check("miner: receiver nested object", mined[0].receiver_name, "Fahim");
   check("miner: phone normalised", mined[0].phone, "01712345678");
   check("miner: address", mined[0].address, "Bhola, Bangladesh");
+  check("miner: city dropped country suffix", mined[0].city, "Bhola");
+  check("miner: city from flat address", mined[1].city, "Chandanaish");
   check("miner: merchant is not the receiver", mined[0].receiver_name === "Jitben.com", false);
   check("miner: iso date", mined[0].order_date, "2026-10-10");
   check("miner: status casing normalised", mined[1].status, "Paid Return");
@@ -206,6 +208,7 @@ check("fallback: full address retained", blob[0].address, "22 Baker Street, Guls
   check("e2e: receiver name", first?.receiver_name, "E2E Receiver");
   check("e2e: receiver phone", first?.phone, "01700000000");
   check("e2e: receiver address", first?.address, "Road 1, Dhanmondi, Dhaka");
+  check("e2e: city derived", first?.city, "Dhaka");
   check("e2e: status", first?.status, "Delivered");
   check("e2e: order date", first?.order_date, "2026-11-18");
   check("e2e: second row name", second?.receiver_name, "Second Person");
