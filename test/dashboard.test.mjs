@@ -126,5 +126,26 @@ check(
   true,
 );
 
+// A later, sparser snapshot for the same order (virtualised list, a second copy
+// of the extension, a row rendered without details) must not blank known fields.
+window.postMessage(
+  {
+    type: "jitben:live",
+    rows: [{ fid: "F1099NEWEXT", status: "Delivered", receiver_name: "", phone: "", address: "", order_date: "2026-11-19" }],
+    ext: true,
+  },
+  "*",
+);
+await sleep(300);
+const sparseRow = rows().find((r) => r.textContent.includes("F1099NEWEXT"));
+check("sparse snapshot keeps the name", sparseRow.children[3].textContent.trim(), "Rumi Akter");
+check("sparse snapshot keeps the address", sparseRow.children[5].textContent.trim(), "House 12, Road 4, Dhanmondi, Dhaka");
+
+// The page reports what the bridge actually delivered, so a screenshot is
+// enough to tell "extension sent nothing" from "page drew nothing".
+const note = window.document.getElementById("qualityNote").textContent;
+check("bridge diagnostics rendered", note.includes("Live bridge:"), true);
+check("bridge diagnostics count the rows", /Live bridge: \d+ rows received, \d+ with receiver info/.test(note), true);
+
 console.log(failures ? `\n${failures} assertion(s) failed` : "\nAll dashboard assertions passed");
 process.exit(failures ? 1 : 0);
